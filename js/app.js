@@ -385,15 +385,9 @@
       flightCards[f.key] = { el, data:f, latlng: L.latLng(p.lat,p.lng) };
       const icon = L.divIcon({
         className: "aircraft-marker",
-        html: `
-          <div class="aircraft-marker__glyph" style="--hdg:${p.hdg ?? 0}deg;">
-            <span class="aircraft-marker__halo"></span>
-            <span class="aircraft-marker__ring"></span>
-            <span class="aircraft-marker__plane">✈</span>
-          </div>
-        `,
-        iconSize: [30, 30],
-        iconAnchor: [15, 15]
+        html: `<div class="aircraft-marker__glyph" style="--hdg:${p.hdg ?? 0}deg;">✈</div>`,
+        iconSize: [26, 26],
+        iconAnchor: [13, 13]
       });
       const marker = L.marker([p.lat, p.lng], { icon, interactive: false }).addTo(flightLayer);
       flightMarkers[f.key] = marker;
