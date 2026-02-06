@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>SAEZ-ATCCTRL</title>
+
+  <!-- Leaflet -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand__icon" aria-hidden="true">
+          <!-- Control tower icon (inline SVG) -->
+          <svg viewBox="0 0 24 24" fill="none">
+            <path d="M7 21h10M9 21V9.5l3-2.5 3 2.5V21" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M7.5 9h9L12 5.5 7.5 9Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+            <path d="M10 12h4M10 15h4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+            <path d="M3 6l3 1M21 6l-3 1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <div class="brand__title">SAEZ-ATCCTRL</div>
+        <div class="brand__badge">OCC</div>
+      </div>
+
+      <div class="topbar__actions">
+        <button id="btnEdit" class="btn btn--ghost" title="Modo Editor">
+          <span class="btn__dot"></span>
+          Editar
+        </button>
+        <button id="btnRefresh" class="btn" title="Refrescar datos">
+          <span class="btn__icon" aria-hidden="true">⟳</span>
+          Refrescar
+        </button>
+
+        <div class="timelapse">
+          <label class="switch" title="Timelapse (historial reciente)">
+            <input id="tlToggle" type="checkbox">
+            <span class="switch__track"></span>
+          </label>
+          <div class="timelapse__label">Timelapse</div>
+
+          <button id="tlPlay" class="btn btn--tiny btn--ghost" title="Reproducir/Pausar" disabled>▶</button>
+          <input id="tlSlider" class="range" type="range" min="0" max="0" value="0" disabled />
+          <div id="tlTime" class="timelapse__time">--:--:--</div>
+        </div>
+      </div>
+    </header>
+
+    <aside class="sidebar">
+<!-- POSICIONES (solo editor) -->
+<div class="sidebar__section" id="positionsSection">
+  <div class="section__title">Posiciones</div>
+  <div class="section__hint">
+    Creá/ajustá posiciones desde <b>Editar</b>. Se guardan localmente.
+  </div>
+  <div id="positionsList" class="list"></div>
+</div>
+
+
+      <div class="sidebar__section">
+        <div class="section__title">Vuelos</div>
+        <div class="section__hint">Tocá un vuelo para centrar y resaltarlo.</div>
+        <div id="flightsList" class="list"></div>
+      </div>
+
+      <div class="sidebar__footer">
+        <div class="muted">Mapa satelital + overlay oscuro • Leaflet</div>
+        <div class="muted">Datos: Google Sheets vía Apps Script</div>
+      </div>
+    </aside>
+
+    <main class="main">
+      <div id="map" class="map"></div>
+      <div id="hud" class="hud">
+        <div class="hud__pill" id="hudStatus">Desconectado</div>
+        <div class="hud__pill" id="hudCounts">0 posiciones • 0 vuelos</div>
+        <div class="hud__pill hud__pill--right" id="hudClock">--:--:--</div>
+      </div>
+    </main>
+  </div>
+
+  <!-- Modals -->
+  <div id="modalRoot" class="modal-root" aria-hidden="true"></div>
+
+  <script src="js/config.js"></script>
+  <script src="js/utils.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/layout.js"></script>
+  <script src="js/editor.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
