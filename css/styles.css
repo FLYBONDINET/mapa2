@@ -336,6 +336,25 @@ body{
   box-shadow: 0 10px 25px rgba(0,0,0,0.30);
 }
 
+/* Aircraft markers on positions */
+.aircraft-marker{
+  background: transparent;
+  border: none;
+}
+.aircraft-marker__glyph{
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: rgba(8,12,22,0.72);
+  border: 1px solid rgba(0,210,255,0.4);
+  color: rgba(0,210,255,0.95);
+  font-size: 14px;
+  box-shadow: 0 10px 24px rgba(0,0,0,0.35);
+  transform: rotate(var(--hdg));
+}
+
 /* Modals */
 .modal-root{
   position: fixed;
