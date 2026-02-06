@@ -188,7 +188,11 @@
   btnEdit.addEventListener("click", async ()=>{
     const res = await Editor.toggle();
     btnEdit.classList.toggle("is-on", res.enabled);
+    document.body.classList.toggle("is-editing", res.enabled);
     if(!res.enabled) clearTemp();
+    if(!res.enabled){
+      refresh();
+    }
   });
 
   // --- Flights rendering ---
