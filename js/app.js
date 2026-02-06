@@ -32,6 +32,7 @@
   const posLayer = L.layerGroup().addTo(map);
   const arrowLayer = L.layerGroup().addTo(map);
   const hdgTempLayer = L.layerGroup().addTo(map);
+  const flightLayer = L.layerGroup().addTo(map);
 
   // Cards overlay container (Leaflet overlay pane)
   const cardsPane = map.getPanes().overlayPane;
@@ -39,6 +40,7 @@
 
   let posMarkers = {};   // posName -> marker
   let flightCards = {};  // flightKey -> { el, data, latlng }
+  let flightMarkers = {}; // flightKey -> marker
   let selectedKey = null;
 
   // Timelapse history
@@ -188,7 +190,11 @@
   btnEdit.addEventListener("click", async ()=>{
     const res = await Editor.toggle();
     btnEdit.classList.toggle("is-on", res.enabled);
+    document.body.classList.toggle("is-editing", res.enabled);
     if(!res.enabled) clearTemp();
+    if(!res.enabled){
+      refresh();
+    }
   });
 
   // --- Flights rendering ---
@@ -241,6 +247,8 @@
       flightCards[k].el.remove();
     }
     flightCards = {};
+    flightLayer.clearLayers();
+    flightMarkers = {};
     arrowLayer.clearLayers();
   }
 
@@ -375,6 +383,20 @@
       placeCardAt(el, L.latLng(p.lat, p.lng));
 
       flightCards[f.key] = { el, data:f, latlng: L.latLng(p.lat,p.lng) };
+      const icon = L.divIcon({
+        className: "aircraft-marker",
+        html: `
+          <div class="aircraft-marker__glyph" style="--hdg:${p.hdg ?? 0}deg;">
+            <span class="aircraft-marker__halo"></span>
+            <span class="aircraft-marker__ring"></span>
+            <span class="aircraft-marker__plane">✈</span>
+          </div>
+        `,
+        iconSize: [30, 30],
+        iconAnchor: [15, 15]
+      });
+      const marker = L.marker([p.lat, p.lng], { icon, interactive: false }).addTo(flightLayer);
+      flightMarkers[f.key] = marker;
       cards.push(el);
 
       if(f.move){
