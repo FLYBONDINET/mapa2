@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+  <title>SAEZ-ATCCTRL</title>
+
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet-polylinedecorator@1.7.0/dist/leaflet.polylineDecorator.min.js"></script>
+
+  <link rel="stylesheet" href="./assets/style.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-icon" aria-hidden="true">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+            <path d="M4 21h16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            <path d="M8 21V10l4-3 4 3v11" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+            <path d="M8 10h8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            <path d="M9 6l3-2 3 2" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M6 4l2 2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            <path d="M18 4l-2 2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <div>
+          <div class="brand-title">SAEZ-ATCCTRL</div>
+          <div class="brand-sub">Ezeiza • OCC • Satélite oscurecido • Posiciones & Vuelos</div>
+        </div>
+      </div>
+
+      <div class="top-actions">
+        <button id="btnEdit" class="btn btn-ghost" title="Modo editor (password)">
+          <span class="status-dot"></span> Editar
+        </button>
+        <button id="btnRefresh" class="btn btn-primary" title="Refrescar y actualizar datos">⟳ Refrescar</button>
+        <button id="btnSettings" class="btn btn-ghost" title="Configuración">⚙︎</button>
+      </div>
+    </header>
+
+    <main class="main">
+      <aside class="sidebar">
+        <section id="panelPositions" class="panel">
+          <div class="panel-head">
+            <h2>Posiciones</h2>
+            <span id="positionsCount" class="pill">0</span>
+          </div>
+          <div class="panel-body">
+            <div class="tiny muted">En editor: tocá el mapa para crear una posición.</div>
+            <div id="positionsList" class="list"></div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <h2>Vuelos</h2>
+            <span id="flightsCount" class="pill">0</span>
+          </div>
+          <div class="panel-body">
+            <div class="row gap">
+              <input id="searchFlights" class="input" placeholder="Buscar matrícula o vuelo…" />
+              <button id="btnPlay" class="btn btn-ghost" title="Timelapse">▶︎</button>
+            </div>
+            <div class="row">
+              <input id="timeSlider" type="range" min="0" max="0" value="0" step="1" />
+            </div>
+            <div id="timeLabel" class="tiny muted">Timelapse: 0/0</div>
+            <div id="flightsList" class="list"></div>
+          </div>
+        </section>
+
+        <footer class="footer tiny muted">
+          Tiles: Esri World Imagery (filtro para oscurecer). Tarjetas arrastrables.
+        </footer>
+      </aside>
+
+      <section class="map-wrap">
+        <div id="map"></div>
+        <div id="cardsOverlay" class="cards-overlay"></div>
+        <div id="toast" class="toast hidden"></div>
+      </section>
+    </main>
+  </div>
+
+  <div id="backdrop" class="backdrop hidden"></div>
+
+  <div id="modalPass" class="modal hidden">
+    <div class="modal-head">
+      <div class="modal-title">Entrar a modo editor</div>
+      <button class="icon-btn" data-close="modalPass">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="muted small">Ingresá la contraseña.</div>
+      <label class="label">Contraseña</label>
+      <input id="passInput" class="input" type="password" placeholder="••••••••" />
+      <div class="row right gap">
+        <button id="btnPassCancel" class="btn btn-ghost">Cancelar</button>
+        <button id="btnPassOk" class="btn btn-primary">Ingresar</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="modalPos" class="modal hidden">
+    <div class="modal-head">
+      <div id="modalPosTitle" class="modal-title">Nueva posición</div>
+      <button class="icon-btn" data-close="modalPos">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="grid2">
+        <div>
+          <label class="label">Posición</label>
+          <input id="posName" class="input" placeholder="Ej: 72 / 50B" />
+        </div>
+        <div>
+          <label class="label">HDG</label>
+          <input id="posHdg" class="input" type="number" min="0" max="359" value="0" />
+        </div>
+      </div>
+
+      <label class="label">Giro rápido (scroll/slider)</label>
+      <input id="posHdgSlider" type="range" min="0" max="359" value="0" />
+      <div class="tiny muted">La línea de preview rota sobre el punto.</div>
+
+      <div class="row right gap">
+        <button id="btnPosCancel" class="btn btn-ghost">Cancelar</button>
+        <button id="btnPosSave" class="btn btn-primary">Guardar</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="modalSettings" class="modal hidden">
+    <div class="modal-head">
+      <div class="modal-title">Configuración</div>
+      <button class="icon-btn" data-close="modalSettings">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="muted small">Pegá la URL del Web App (Apps Script) que termina en <span class="kbd">/exec</span>.</div>
+      <label class="label">API URL</label>
+      <input id="apiUrlInput" class="input" placeholder="https://script.google.com/macros/s/.../exec" />
+      <div class="row right gap">
+        <button id="btnSettingsCancel" class="btn btn-ghost">Cancelar</button>
+        <button id="btnSettingsSave" class="btn btn-primary">Guardar</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="./assets/app.js"></script>
+</body>
+</html>
