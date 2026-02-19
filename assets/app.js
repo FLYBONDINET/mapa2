@@ -4,6 +4,7 @@
 const CENTER = [-34.8222, -58.5358];
 const ZOOM = 16;
 const EDIT_PASSWORD = "12345678";
+const DEFAULT_API_URL = "https://script.google.com/macros/s/AKfycbxPyGjGBzP99_Ti4uwu5CNg7XipTiImQdOzAfSOvziWCmVY0uUr7XD_EHSa18U8jsTGnQ/exec";
 const STORAGE = {
   positions: "saez.positions.pro1",
   apiUrl: "saez.apiUrl.pro1",
@@ -135,7 +136,8 @@ function init(){
   setEditor(false);
   renderPositions();
   updateTimeLabel();
-  if(getApiUrl()) refresh(); else toast("Configurá la URL de la API en ⚙︎","info");
+  if(!getApiUrl()) { setApiUrl(DEFAULT_API_URL); }
+  refresh();
 }
 
 function setEditor(on){
@@ -412,6 +414,15 @@ function positionCards(){
     const div=cards.get(key); if(!div) return;
     const pos=findPosByName(anchorPosName(f)); if(!pos) return;
     const pt=map.latLngToContainerPoint([pos.lat,pos.lng]);
+
+    // Si el punto ancla está fuera de pantalla, no mostrar la tarjeta
+    if(pt.x < -40 || pt.y < -40 || pt.x > o.width + 40 || pt.y > o.height + 40){
+      div.style.display = "none";
+      return;
+    }else{
+      div.style.display = "";
+    }
+
     const w=div.offsetWidth||280, h=div.offsetHeight||170;
     let x,y;
     const off=cardOffsets[key];

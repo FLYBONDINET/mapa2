@@ -13,3 +13,11 @@
 - Botón Editar → password 12345678
 - Click en mapa → posición + HDG
 - Guardar: queda punto y, si hay vuelo, avión con color por matrícula.
+
+
+## API
+- Esta versión viene preconfigurada con la URL del Web App.
+- Podés cambiarla en ⚙︎ (se guarda en LocalStorage).
+
+## GitHub Pages
+- Abrir desde GitHub Pages funciona igual (la configuración y posiciones quedan locales por navegador/PC).
