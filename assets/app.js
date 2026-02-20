@@ -4,7 +4,7 @@
 const CENTER = [-34.8222, -58.5358];
 const ZOOM = 16;
 const EDIT_PASSWORD = "12345678";
-const DEFAULT_API_URL = "https://script.google.com/macros/s/AKfycbwpS8BUus5Mu8AYRg-NPeBzU9QXaLYLc4sCi6S6IhnDk_Asf3rZDpOixXje4QJxQ8GM3g/exec";
+const DEFAULT_API_URL = "https://script.google.com/macros/s/AKfycbxPyGjGBzP99_Ti4uwu5CNg7XipTiImQdOzAfSOvziWCmVY0uUr7XD_EHSa18U8jsTGnQ/exec";
 const STORAGE = {
   positions: "saez.positions.pro1",
   apiUrl: "saez.apiUrl.pro1",
