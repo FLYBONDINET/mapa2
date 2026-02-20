@@ -4,7 +4,7 @@
 const CENTER = [-34.8222, -58.5358];
 const ZOOM = 16;
 const EDIT_PASSWORD = "12345678";
-const DEFAULT_API_URL = "https://script.google.com/macros/s/AKfycbwi9BKtVvzqbzZCpZUqTbPNVZ9z6S-M6xyAYdd8qq_WNR59TqPdilBqB4YX2GO2ENCP3w/exec";
+const DEFAULT_API_URL = "https://script.google.com/macros/s/AKfycbxdDn8fKZv82NL9D2ryvn5gnNXJosBE1GMk2X-fV1dZP5NF2tTxPbAT0JWoof6jqr5uQQ/exec";
 const STORAGE = {
   positions: "saez.positions.pro1",
   apiUrl: "saez.apiUrl.pro1",
@@ -24,17 +24,21 @@ function escapeHtml(s){
 }
 function toast(msg, type){
   const el = $("#toast");
+  if(!el) return;
   el.textContent = msg;
   el.style.borderColor = (type==="error") ? "rgba(255,77,109,.45)" : "rgba(93,214,255,.35)";
   el.classList.remove("hidden");
   clearTimeout(toast._t);
   toast._t = setTimeout(()=> el.classList.add("hidden"), 3000);
 }
-function openModal(id){ $("#backdrop").classList.remove("hidden"); $("#" + id).classList.remove("hidden"); }
+function openModal(id){
+  $("#backdrop")?.classList.remove("hidden");
+  $("#" + id)?.classList.remove("hidden");
+}
 function closeModal(id){
-  $("#" + id).classList.add("hidden");
+  $("#" + id)?.classList.add("hidden");
   const anyOpen = $$(".modal").some(m=>!m.classList.contains("hidden"));
-  if(!anyOpen) $("#backdrop").classList.add("hidden");
+  if(!anyOpen) $("#backdrop")?.classList.add("hidden");
 }
 
 function loadJson(key, fallback){ try{ const v=localStorage.getItem(key); return v?JSON.parse(v):fallback; }catch{return fallback;} }
@@ -104,6 +108,18 @@ function flightKey(f){
   return `${f.reg||""}|${(f.arr?.flightNo||"")}|${(f.dep?.flightNo||"")}`;
 }
 
+/**
+ * ✅ FILTRO: bloquear pseudo-vuelos tipo "GIG-CON", "IGR-CAN", "QTR-HOR"
+ * patrón 3 letras - 3 letras, donde el sufijo es remark/estado.
+ */
+function isInvalidPseudoFlight(f){
+  const badSuffix = new Set(["CON","CAN","HOR","ALT","PAR","CER","BOR","ULT","PRE"]);
+  const s = String(f||"").trim().toUpperCase();
+  const m = s.match(/^([A-Z]{3})-([A-Z]{3})$/);
+  if(!m) return false;
+  return badSuffix.has(m[2]);
+}
+
 let map, editor=false;
 let positions=loadJson(STORAGE.positions, []);
 let flights=[], movements=[];
@@ -150,8 +166,8 @@ function init(){
     startNewPos(e.latlng);
   });
   map.on("move zoom", ()=> positionCards());
-  map.on("movestart zoomstart", ()=> { $("#cardsOverlay").classList.add("moving"); });
-  map.on("moveend zoomend", ()=> { $("#cardsOverlay").classList.remove("moving"); positionCards(); });
+  map.on("movestart zoomstart", ()=> { $("#cardsOverlay")?.classList.add("moving"); });
+  map.on("moveend zoomend", ()=> { $("#cardsOverlay")?.classList.remove("moving"); positionCards(); });
 
   bindUI();
   applyModeUi();
@@ -166,9 +182,19 @@ function init(){
 function setEditor(on){
   editor=!!on;
   const btn=$("#btnEdit");
-  btn.classList.toggle("editor-on", editor);
-  btn.innerHTML = editor ? '<span class="status-dot"></span> Editor ON (salir)' : '<span class="status-dot"></span> Editar';
-  $("#panelPositions").style.display = editor ? "" : "none";
+  if(btn){
+    btn.classList.toggle("editor-on", editor);
+    btn.innerHTML = editor ? '<span class="status-dot"></span> Editor ON (salir)' : '<span class="status-dot"></span> Editar';
+  }
+
+  // ✅ panel de posiciones solo editor
+  const pp=$("#panelPositions");
+  if(pp) pp.style.display = editor ? "" : "none";
+
+  // ✅ botón configuración SOLO editor
+  const bs=$("#btnSettings");
+  if(bs) bs.style.display = editor ? "" : "none";
+
   clearTemp();
   renderPositions();
 }
@@ -453,15 +479,27 @@ function renderAircraftRegistry(listEl){
   listEl.appendChild(sep);
 }
 
+/**
+ * ✅ renderFlightsList con filtro de pseudo-vuelos XXX-XXX (CON/CAN/HOR…)
+ */
 function renderFlightsList(){
   const q=($("#searchFlights").value||"").trim().toLowerCase();
   const list=$("#flightsList"); list.innerHTML="";
   renderAircraftRegistry(list);
 
-  const filtered=flights.filter(f=>{
-    const s=`${f.reg} ${(f.arr?.flightNo||"")} ${(f.dep?.flightNo||"")}`.toLowerCase();
-    return !q || s.includes(q);
-  }).sort((a,b)=>String(a.reg).localeCompare(String(b.reg)));
+  const filtered=flights
+    .filter(f=>{
+      const arrNo = f.arr?.flightNo || "";
+      const depNo = f.dep?.flightNo || "";
+
+      // ✅ NO listar pseudo-vuelos tipo GIG-CON / IGR-CAN / QTR-HOR
+      if(isInvalidPseudoFlight(arrNo) || isInvalidPseudoFlight(depNo)) return false;
+
+      const s=`${f.reg} ${arrNo} ${depNo}`.toLowerCase();
+      return !q || s.includes(q);
+    })
+    .sort((a,b)=>String(a.reg).localeCompare(String(b.reg)));
+
   $("#flightsCount").textContent=String(filtered.length);
   if(!filtered.length){
     const d=document.createElement("div"); d.className="tiny muted"; d.textContent="Sin vuelos para mostrar.";
@@ -541,8 +579,7 @@ function enableDrag(div,key){
   };
 
   div.addEventListener("pointerdown",(e)=>{
-    // No iniciar drag si el click fue sobre el botón de matrícula (toggle)
-    if(e.target && e.target.closest && e.target.closest("[data-action=\'toggle\']")) return;
+    if(e.target && e.target.closest && e.target.closest("[data-action='toggle']")) return;
     dragging=true;
     div.setPointerCapture(e.pointerId);
     const rect=div.getBoundingClientRect();
@@ -560,7 +597,6 @@ function enableDrag(div,key){
     const anchor = getAnchor();
     if(!anchor) return;
 
-    // Guardar offset relativo al ancla => se mueve con el mapa
     cardOffsets[key] = { dx: newLeft - anchor.x, dy: newTop - anchor.y };
     saveJson(STORAGE.cardOffsets,cardOffsets);
     positionCards();
@@ -605,7 +641,6 @@ function positionCards(){
     const pos=findPosByName(anchorPosName(f)); if(!pos) return;
     const pt=map.latLngToContainerPoint([pos.lat,pos.lng]);
 
-    // Si el punto ancla está fuera de pantalla, no mostrar la tarjeta
     if(pt.x < -40 || pt.y < -40 || pt.x > o.width + 40 || pt.y > o.height + 40){
       div.style.display = "none";
       return;
@@ -715,7 +750,6 @@ function togglePlay(){
 }
 
 function bindUI(){
-  // cards toggle delegation
   const overlay = $("#cardsOverlay");
   overlay.addEventListener("click", (e)=>{
     const t = e.target.closest("[data-action='toggle']");
@@ -728,7 +762,6 @@ function bindUI(){
     positionCards();
     e.preventDefault();
   });
-
 
   $$("[data-close]").forEach(b=>b.addEventListener("click",()=>closeModal(b.dataset.close)));
   $("#backdrop").addEventListener("click",()=>{
@@ -747,9 +780,23 @@ function bindUI(){
     closeModal("modalPass"); setEditor(true); toast("Editor habilitado: tocá el mapa.");
   };
 
-  $("#btnSettings").onclick=()=>{ $("#apiUrlInput").value=getApiUrl(); $("#modeSelect").value=getMode(); $("#autoRefreshSelect").value=String(getAutoRefresh()); openModal("modalSettings"); };
+  // ⚙️ Settings (solo visible en editor, pero el handler puede quedar igual)
+  $("#btnSettings").onclick=()=>{
+    $("#apiUrlInput").value=getApiUrl();
+    $("#modeSelect").value=getMode();
+    $("#autoRefreshSelect").value=String(getAutoRefresh());
+    openModal("modalSettings");
+  };
   $("#btnSettingsCancel").onclick=()=>closeModal("modalSettings");
-  $("#btnSettingsSave").onclick=()=>{ setApiUrl($("#apiUrlInput").value); setMode($("#modeSelect").value); setAutoRefresh($("#autoRefreshSelect").value); closeModal("modalSettings"); applyModeUi(); setupAutoRefresh(); toast("Configuración guardada"); };
+  $("#btnSettingsSave").onclick=()=>{
+    setApiUrl($("#apiUrlInput").value);
+    setMode($("#modeSelect").value);
+    setAutoRefresh($("#autoRefreshSelect").value);
+    closeModal("modalSettings");
+    applyModeUi();
+    setupAutoRefresh();
+    toast("Configuración guardada");
+  };
 
   $("#btnRefresh").onclick=()=>refresh();
 
@@ -793,7 +840,7 @@ function bindUI(){
   function syncLine(){
     if(!temp.latlng || !temp.line) return;
     const hdg=normHdg($("#posHdg").value);
-    temp.line.setLatLngs([temp.latlng, destPoint(temp.latlng.lat,temp.latlng.lng,hdg,120)]);
+    temp.line.setLatLngs([temp.latlng, destPoint(temp.latlng.lat, temp.latlng.lng, hdg, 120)]);
   }
   $("#posHdg").addEventListener("input",()=>{ const v=normHdg($("#posHdg").value); $("#posHdg").value=String(v); $("#posHdgSlider").value=String(v); syncLine(); });
   $("#posHdgSlider").addEventListener("input",()=>{ const v=normHdg($("#posHdgSlider").value); $("#posHdg").value=String(v); syncLine(); });

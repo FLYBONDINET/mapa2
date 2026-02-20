@@ -27,7 +27,7 @@
         </div>
         <div>
           <div class="brand-title">SAEZ-ATCCTRL</div>
-          <div class="brand-sub">Ezeiza • OCC • Satélite oscurecido • Posiciones & Vuelos</div>
+          <div class="brand-sub">Ezeiza • OCC</div>
         </div>
       </div>
 
@@ -36,19 +36,22 @@
           <span class="status-dot"></span> Editar
         </button>
         <button id="btnRefresh" class="btn btn-primary" title="Refrescar y actualizar datos">⟳ Refrescar</button>
-        <button id="btnSettings" class="btn btn-ghost" title="Configuración">⚙︎</button>
+
+        <!-- ✅ Oculto por defecto: se muestra SOLO en modo editor desde app.js -->
+        <button id="btnSettings" class="btn btn-ghost" title="Configuración" style="display:none">⚙︎</button>
       </div>
     </header>
 
     <main class="main">
       <aside class="sidebar">
-        <section id="panelPositions" class="panel">
+
+        <!-- ✅ Oculto por defecto: se muestra SOLO en modo editor desde app.js -->
+        <section id="panelPositions" class="panel" style="display:none">
           <div class="panel-head">
             <h2>Posiciones</h2>
             <span id="positionsCount" class="pill">0</span>
           </div>
           <div class="panel-body">
-            <div class="tiny muted">En editor: tocá el mapa para crear una posición.</div>
             <div class="row gap" style="margin-top:10px">
               <button id="btnExportPos" class="btn btn-ghost" title="Exportar posiciones (JSON)">⬇︎ Exportar</button>
               <button id="btnImportPos" class="btn btn-ghost" title="Importar posiciones (JSON)">⬆︎ Importar</button>
@@ -76,9 +79,7 @@
           </div>
         </section>
 
-        <footer class="footer tiny muted">
-          
-        </footer>
+        <footer class="footer tiny muted"></footer>
       </aside>
 
       <section class="map-wrap">
@@ -126,7 +127,6 @@
 
       <label class="label">Giro rápido (scroll/slider)</label>
       <input id="posHdgSlider" type="range" min="0" max="359" value="0" />
-      <div class="tiny muted">La línea de preview rota sobre el punto.</div>
 
       <div class="row right gap">
         <button id="btnPosCancel" class="btn btn-ghost">Cancelar</button>
@@ -142,20 +142,24 @@
     </div>
     <div class="modal-body">
       <div class="muted small">Pegá la URL del Web App (Apps Script) que termina en <span class="kbd">/exec</span>.</div>
+
       <label class="label">Modo</label>
-<select id="modeSelect" class="input">
-  <option value="intermediate">Intermedia</option>
-  <option value="pro">OCC PRO</option>
-</select>
-<label class="label">Auto-refresh</label>
-<select id="autoRefreshSelect" class="input">
-  <option value="0">OFF</option>
-  <option value="30">30s</option>
-  <option value="60">60s</option>
-  <option value="120">120s</option>
-</select>
-<label class="label">API URL</label>
+      <select id="modeSelect" class="input">
+        <option value="intermediate">Intermedia</option>
+        <option value="pro">OCC PRO</option>
+      </select>
+
+      <label class="label">Auto-refresh</label>
+      <select id="autoRefreshSelect" class="input">
+        <option value="0">OFF</option>
+        <option value="30">30s</option>
+        <option value="60">60s</option>
+        <option value="120">120s</option>
+      </select>
+
+      <label class="label">API URL</label>
       <input id="apiUrlInput" class="input" placeholder="https://script.google.com/macros/s/.../exec" />
+
       <div class="row right gap">
         <button id="btnSettingsCancel" class="btn btn-ghost">Cancelar</button>
         <button id="btnSettingsSave" class="btn btn-primary">Guardar</button>
