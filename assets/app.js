@@ -4,7 +4,7 @@
 const CENTER = [-34.8222, -58.5358];
 const ZOOM = 16;
 const EDIT_PASSWORD = "12345678";
-const DEFAULT_API_URL = "https://script.google.com/macros/s/AKfycbxdDn8fKZv82NL9D2ryvn5gnNXJosBE1GMk2X-fV1dZP5NF2tTxPbAT0JWoof6jqr5uQQ/exec";
+const DEFAULT_API_URL = "https://script.google.com/macros/s/AKfycbxJyPlLxFbGNG3q8J-oT7I-lamKSOWMFpuLzX3BXcuTe2sHM-P0gmK8MkNrWtaLesMyOg/exec";
 const STORAGE = {
   positions: "saez.positions.pro1",
   apiUrl: "saez.apiUrl.pro1",
@@ -49,13 +49,12 @@ function getMode(){ return (localStorage.getItem(STORAGE.mode)||"intermediate").
 function setMode(v){ localStorage.setItem(STORAGE.mode, (v||"intermediate").trim()); }
 function getAutoRefresh(){ return Number(localStorage.getItem(STORAGE.autoRefresh) || 0) || 0; }
 function setAutoRefresh(v){ localStorage.setItem(STORAGE.autoRefresh, String(Number(v)||0)); }
+
 function b64UrlEncodeUnicode(str){
-  // UTF-8 -> base64url (sin + / =), ideal para querystring
   const b64 = btoa(unescape(encodeURIComponent(str)));
   return b64.replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
 }
 function b64UrlDecodeUnicode(str){
-  // base64url -> UTF-8
   let s = String(str||'').replace(/-/g,'+').replace(/_/g,'/');
   while(s.length % 4) s += '=';
   return decodeURIComponent(escape(atob(s)));
@@ -77,15 +76,19 @@ function destPoint(lat,lng,bearingDeg,distM){
   const λ2=λ1 + Math.atan2(y,x);
   return { lat: φ2*180/Math.PI, lng: λ2*180/Math.PI };
 }
+
+/** Detecta movimiento: "70 > M02" */
 function parseMovement(pos){
   const m=String(pos||"").match(/^\s*([^>\s]+)\s*>\s*([^>\s]+)\s*$/);
   return m?{from:m[1],to:m[2]}:null;
 }
+
 function colorForReg(reg){
   const s=String(reg||"").toUpperCase();
   let h=0; for(let i=0;i<s.length;i++) h=(h*31+s.charCodeAt(i))>>>0;
   return `hsl(${h%360} 85% 60%)`;
 }
+
 function makePlaneIcon(color, rotation){
   const rot=Number(rotation)||0;
   const svg=`<svg width="30" height="30" viewBox="0 0 24 24" style="transform:rotate(${rot}deg)">
@@ -97,6 +100,7 @@ function makePlaneIcon(color, rotation){
     className:"", iconSize:[34,34], iconAnchor:[17,17]
   });
 }
+
 function makePosIcon(name, highlight){
   const div=document.createElement("div");
   div.className="pos-icon"+(highlight?" highlight":"");
@@ -104,6 +108,7 @@ function makePosIcon(name, highlight){
   div.appendChild(span);
   return L.divIcon({ html: div, className:"", iconSize:[34,34], iconAnchor:[17,17] });
 }
+
 function flightKey(f){
   return `${f.reg||""}|${(f.arr?.flightNo||"")}|${(f.dep?.flightNo||"")}`;
 }
@@ -123,13 +128,13 @@ function isInvalidPseudoFlight(f){
 let map, editor=false;
 let positions=loadJson(STORAGE.positions, []);
 let flights=[], movements=[];
-let aircraftPositions=[]; // persisted registry -> last pos
+let aircraftPositions=[];
 let flightTypeFilter="all";
 
 let posMarkers=new Map();
 let cards=new Map();
 let cardOffsets=loadJson(STORAGE.cardOffsets, {});
-let cardExpanded=loadJson(STORAGE.cardExpanded, {}); // key -> boolean
+let cardExpanded=loadJson(STORAGE.cardExpanded, {});
 let arrowsLayer=L.layerGroup();
 let aircraftLayer=L.layerGroup();
 let history=[];
@@ -140,11 +145,14 @@ function findPosByName(name){
   const n=String(name||"").toUpperCase();
   return positions.find(p=>String(p.name).toUpperCase()===n) || null;
 }
+
+/** Ancla en FROM si hay movimiento (ej: "70 > M02") */
 function anchorPosName(f){
   const s=String(f.pos||"").trim();
   const m=parseMovement(s);
   return m?m.from:s;
 }
+
 function isVisible(f){
   const pn=anchorPosName(f);
   if(!pn) return false;
@@ -158,6 +166,7 @@ function init(){
   L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",{
     maxZoom:19, attribution:"Tiles © Esri", className:"sat-dim"
   }).addTo(map);
+
   arrowsLayer.addTo(map);
   aircraftLayer.addTo(map);
 
@@ -165,6 +174,7 @@ function init(){
     if(!editor) return;
     startNewPos(e.latlng);
   });
+
   map.on("move zoom", ()=> positionCards());
   map.on("movestart zoomstart", ()=> { $("#cardsOverlay")?.classList.add("moving"); });
   map.on("moveend zoomend", ()=> { $("#cardsOverlay")?.classList.remove("moving"); positionCards(); });
@@ -187,11 +197,9 @@ function setEditor(on){
     btn.innerHTML = editor ? '<span class="status-dot"></span> Editor ON (salir)' : '<span class="status-dot"></span> Editar';
   }
 
-  // ✅ panel de posiciones solo editor
   const pp=$("#panelPositions");
   if(pp) pp.style.display = editor ? "" : "none";
 
-  // ✅ botón configuración SOLO editor
   const bs=$("#btnSettings");
   if(bs) bs.style.display = editor ? "" : "none";
 
@@ -287,7 +295,6 @@ async function pushPositionsToSheet(){
     const payload = b64UrlEncodeUnicode(JSON.stringify(positions));
     const url = api + (api.includes("?") ? "&" : "?") + "action=savePositions&data=" + encodeURIComponent(payload) + "&cb=" + Date.now();
 
-    // Envío sin CORS: beacon con Image (ideal GitHub Pages)
     const img = new Image();
     img.onerror = ()=>{ 
       _posSyncPending = true;
@@ -334,26 +341,16 @@ async function refresh(){
   }
 }
 
-function parseHHMM(s){
-  if(!s) return null;
-  const m = String(s).trim().match(/^(\d{1,2}):(\d{2})$/);
-  if(!m) return null;
-  const hh = Number(m[1]); const mm = Number(m[2]);
-  if(!Number.isFinite(hh)||!Number.isFinite(mm)) return null;
-  return hh*60+mm;
-}
-
 function normalize(data){
   const arr = Array.isArray(data.arrivals) ? data.arrivals : [];
   const dep = Array.isArray(data.departures) ? data.departures : [];
   const registry = Array.isArray(data.aircraftPositions) ? data.aircraftPositions : [];
 
-  // ✅ Matrículas que despegaron: NO se dibujan aunque estén en registry
   const departed = new Set((data.departedRegs || []).map(x => String(x).toUpperCase()));
 
   const regMap = new Map();
 
-  // Base: registry persistente (solo los que tengan posición y NO estén despegados)
+  // Base: registry persistente
   for(const r of registry){
     if(!r || !r.reg) continue;
     const key = String(r.reg).toUpperCase();
@@ -370,7 +367,7 @@ function normalize(data){
     });
   }
 
-  // Arrivals: solo si tiene time (ETA/ATA)
+  // Arrivals
   for(const a of arr){
     if(!a || !a.reg) continue;
     const key = String(a.reg).toUpperCase();
@@ -392,7 +389,7 @@ function normalize(data){
     regMap.set(key, obj);
   }
 
-  // Departures: solo los activos (ya vienen filtrados por backend)
+  // Departures
   for(const d of dep){
     if(!d || !d.reg) continue;
     const key = String(d.reg).toUpperCase();
@@ -411,7 +408,7 @@ function normalize(data){
     regMap.set(key, obj);
   }
 
-  // Solo aeronaves con posición válida
+  // Solo aeronaves con posición
   const out = [];
   for(const obj of regMap.values()){
     const pos = String(obj.pos||"").trim();
@@ -427,7 +424,34 @@ function normalize(data){
     return String(a.reg).localeCompare(String(b.reg));
   });
 
-  const mov = Array.isArray(data.movements) ? data.movements : [];
+  // ======================================================
+  // ✅ MOVIMIENTOS: detectar "FROM > TO" directamente en obj.pos
+  // ======================================================
+  const mov = [];
+
+  for(const obj of out){
+    const rawPos = String(obj.pos || "").trim();
+    const mv = parseMovement(rawPos);
+    if(!mv) continue;
+
+    const fromPos = String(mv.from || "").trim();
+    const toPos   = String(mv.to || "").trim();
+    if(!fromPos || !toPos) continue;
+    if(fromPos.toUpperCase() === toPos.toUpperCase()) continue;
+
+    mov.push({ reg: obj.reg, fromPos, toPos });
+  }
+
+  // Compat: si backend trae movements, los sumamos
+  const backendMov = Array.isArray(data.movements) ? data.movements : [];
+  for(const m of backendMov){
+    if(!m) continue;
+    const fromPos = (m.fromPos || m.from || "").toString().trim();
+    const toPos   = (m.toPos   || m.to   || "").toString().trim();
+    if(!fromPos || !toPos) continue;
+    mov.push({ reg: (m.reg||"").toString().trim(), fromPos, toPos });
+  }
+
   return { flights: out, movements: mov };
 }
 
@@ -442,14 +466,12 @@ function applySnapshot(snap){
 }
 
 function renderAircraftRegistry(listEl){
-  const mode = getMode();
-  if(mode !== "pro") return;
+return;
 
-  const hdr = document.createElement("div");
-  hdr.className = "tiny muted";
-  hdr.style.marginTop = "4px";
-  hdr.textContent = "Registro aeronaves (última posición):";
-  listEl.appendChild(hdr);
+// (sin título de "Registro aeronaves...")
+const spacer = document.createElement("div");
+spacer.style.height = "6px";
+listEl.appendChild(spacer);
 
   const q = ($("#searchFlights").value || "").trim().toLowerCase();
   const regs = (aircraftPositions||[]).filter(r=>{
@@ -479,9 +501,6 @@ function renderAircraftRegistry(listEl){
   listEl.appendChild(sep);
 }
 
-/**
- * ✅ renderFlightsList con filtro de pseudo-vuelos XXX-XXX (CON/CAN/HOR…)
- */
 function renderFlightsList(){
   const q=($("#searchFlights").value||"").trim().toLowerCase();
   const list=$("#flightsList"); list.innerHTML="";
@@ -492,7 +511,6 @@ function renderFlightsList(){
       const arrNo = f.arr?.flightNo || "";
       const depNo = f.dep?.flightNo || "";
 
-      // ✅ NO listar pseudo-vuelos tipo GIG-CON / IGR-CAN / QTR-HOR
       if(isInvalidPseudoFlight(arrNo) || isInvalidPseudoFlight(depNo)) return false;
 
       const s=`${f.reg} ${arrNo} ${depNo}`.toLowerCase();
@@ -507,8 +525,11 @@ function renderFlightsList(){
   }
   filtered.forEach(f=>{
     const badge=(f.arr&&f.dep)?["TA","ta"]:(f.arr?["ARR","arr"]:["DEP","dep"]);
-    const sub=[ f.arr?`ARR ${f.arr.flightNo||"N/D"} • ${f.arr.origin||"-"} • ${f.arr.time||"-"}`:null,
-                f.dep?`DEP ${f.dep.flightNo||"N/D"} • ${f.dep.time||"-"} • ${f.dep.state||"-"}`:null].filter(Boolean).join(" | ");
+    const sub=[
+      f.arr?`ARR ${f.arr.flightNo||"N/D"} • ${f.arr.origin||"-"} • ${f.arr.time||"-"}`:null,
+      f.dep?`DEP ${f.dep.flightNo||"N/D"} • ${f.dep.time||"-"} • ${f.dep.state||"-"}`:null
+    ].filter(Boolean).join(" | ");
+
     const row=document.createElement("div"); row.className="item"; row.style.cursor="pointer";
     row.innerHTML=`<div class="item-main"><div class="item-title">${escapeHtml(f.reg)} <span class="pill">${escapeHtml(f.pos||"-")}</span> <span class="badge ${badge[1]}">${badge[0]}</span></div>
                    <div class="item-sub">${escapeHtml(sub||"—")}</div></div>`;
@@ -548,6 +569,7 @@ function cardHtml(f){
       <div class="k">Hora</div><div class="v">${escapeHtml(f.arr.time||"-")}</div>
       <div class="k">Cinta</div><div class="v">${escapeHtml(f.arr.belt||"-")}</div>
       <div class="k">Estado</div><div class="v">${escapeHtml(f.arr.state||"-")}</div></div>`:"";
+
   const dep=f.dep?`<div class="badge dep">Salida</div><div class="kv">
       <div class="k">Vuelo</div><div class="v">${escapeHtml(f.dep.flightNo||"N/D")}</div>
       <div class="k">Hora</div><div class="v">${escapeHtml(f.dep.time||"-")}</div>
@@ -608,12 +630,15 @@ function enableDrag(div,key){
 function renderCards(){
   const overlay=$("#cardsOverlay");
   const needed=new Set();
+
   flights.forEach(f=>{
     if(!isVisible(f)) return;
     const pos=findPosByName(anchorPosName(f));
     if(!pos) return;
+
     const key=flightKey(f);
     needed.add(key);
+
     if(!cards.has(key)){
       const div=document.createElement("div");
       div.className="card"; div.dataset.key=key;
@@ -623,6 +648,7 @@ function renderCards(){
     }
     cards.get(key).innerHTML=cardHtml(f);
   });
+
   for(const [k,div] of [...cards.entries()]){
     if(!needed.has(k)){
       div.remove(); cards.delete(k); delete cardOffsets[k]; delete cardExpanded[k];
@@ -634,10 +660,12 @@ function renderCards(){
 function positionCards(){
   const o=$("#cardsOverlay").getBoundingClientRect();
   const used=[];
+
   flights.forEach(f=>{
     if(!isVisible(f)) return;
     const key=flightKey(f);
     const div=cards.get(key); if(!div) return;
+
     const pos=findPosByName(anchorPosName(f)); if(!pos) return;
     const pt=map.latLngToContainerPoint([pos.lat,pos.lng]);
 
@@ -651,6 +679,7 @@ function positionCards(){
     const w=div.offsetWidth||280, h=div.offsetHeight||170;
     let x,y;
     const off=cardOffsets[key];
+
     if(off && Number.isFinite(off.dx) && Number.isFinite(off.dy)){
       const anchor = { x: pt.x + 14, y: pt.y - 14 };
       x = clamp(anchor.x + off.dx, 8, o.width - w - 8);
@@ -668,9 +697,11 @@ function positionCards(){
       if(!placed) placed={x:clamp(x0,8,o.width-w-8),y:clamp(y0,8,o.height-h-8),w,h};
       used.push(placed); x=placed.x; y=placed.y;
     }
+
     div.style.transform=`translate(${Math.round(x)}px,${Math.round(y)}px)`;
   });
 }
+
 function clamp(n,a,b){ return Math.max(a,Math.min(b,n)); }
 function spiral(steps,stepPx){
   const out=[{dx:0,dy:0}]; let dx=0,dy=0,seg=1,done=0,segs=0,dir=0;
@@ -684,14 +715,41 @@ function spiral(steps,stepPx){
 function hit(a,b){ return !(a.x+a.w<b.x || b.x+b.w<a.x || a.y+a.h<b.y || b.y+b.h<a.y); }
 function hitAny(r,list){ for(const x of list) if(hit(r,x)) return true; return false; }
 
+/**
+ * ✅ Flecha + línea punteada animada (move-line)
+ * Soporta mv.{fromPos,toPos} y mv.{from,to}
+ */
 function renderArrows(){
   arrowsLayer.clearLayers();
+
   movements.forEach(mv=>{
-    const from=findPosByName(mv.fromPos), to=findPosByName(mv.toPos);
-    if(!from||!to) return;
-    const line=L.polyline([[from.lat,from.lng],[to.lat,to.lng]],{weight:3,opacity:0.9}).addTo(arrowsLayer);
+    const fromName = (mv.fromPos || mv.from || "").toString().trim();
+    const toName   = (mv.toPos   || mv.to   || "").toString().trim();
+    if(!fromName || !toName) return;
+
+    const from = findPosByName(fromName);
+    const to   = findPosByName(toName);
+    if(!from || !to) return;
+
+    const line = L.polyline(
+      [[from.lat,from.lng],[to.lat,to.lng]],
+      { weight: 3, opacity: 0.95, dashArray: "8 10", className: "move-line" }
+    ).addTo(arrowsLayer);
+
     if(L.polylineDecorator){
-      L.polylineDecorator(line,{patterns:[{offset:"85%",repeat:0,symbol:L.Symbol.arrowHead({pixelSize:10,polygon:false,pathOptions:{weight:3,opacity:0.95}})}]}).addTo(arrowsLayer);
+      L.polylineDecorator(line,{
+        patterns:[
+          {
+            offset:"82%",
+            repeat:0,
+            symbol: L.Symbol.arrowHead({
+              pixelSize: 10,
+              polygon: false,
+              pathOptions:{ weight:3, opacity:0.95 }
+            })
+          }
+        ]
+      }).addTo(arrowsLayer);
     }
   });
 }
@@ -699,6 +757,7 @@ function renderArrows(){
 function renderAircraft(){
   aircraftLayer.clearLayers();
   const groups=new Map();
+
   flights.forEach(f=>{
     if(!isVisible(f)) return;
     const pn=anchorPosName(f); if(!pn) return;
@@ -706,9 +765,11 @@ function renderAircraft(){
     if(!groups.has(u)) groups.set(u,[]);
     groups.get(u).push(f);
   });
+
   groups.forEach((arr,u)=>{
     const pos=findPosByName(u); if(!pos) return;
     const hdg=Number(pos.hdg)||0;
+
     arr.forEach((f,idx)=>{
       const jitter=idx===0?{lat:pos.lat,lng:pos.lng}:destPoint(pos.lat,pos.lng,(idx*60)%360,7);
       L.marker([jitter.lat,jitter.lng],{icon:makePlaneIcon(colorForReg(f.reg),hdg),interactive:false}).addTo(aircraftLayer);
@@ -738,6 +799,7 @@ function updateTimeLabel(){
   const max=Number($("#timeSlider").max||0);
   $("#timeLabel").textContent=`Timelapse: ${max? (v+1):0}/${max? (max+1):0}`;
 }
+
 function togglePlay(){
   if(playTimer){ clearInterval(playTimer); playTimer=null; $("#btnPlay").textContent="▶︎"; toast("Timelapse pausado"); return; }
   if(history.length<2){ toast("Necesitás al menos 2 refrescos.","error"); return; }
@@ -780,7 +842,6 @@ function bindUI(){
     closeModal("modalPass"); setEditor(true); toast("Editor habilitado: tocá el mapa.");
   };
 
-  // ⚙️ Settings (solo visible en editor, pero el handler puede quedar igual)
   $("#btnSettings").onclick=()=>{
     $("#apiUrlInput").value=getApiUrl();
     $("#modeSelect").value=getMode();
@@ -800,7 +861,6 @@ function bindUI(){
 
   $("#btnRefresh").onclick=()=>refresh();
 
-  // Export/Import posiciones (solo editor)
   $("#btnExportPos").onclick = ()=>{
     if(!editor){ toast("Exportar solo en modo editor.","error"); return; }
     const blob = new Blob([JSON.stringify(positions, null, 2)], {type:"application/json"});
@@ -810,11 +870,13 @@ function bindUI(){
     a.click();
     URL.revokeObjectURL(a.href);
   };
+
   $("#btnImportPos").onclick = ()=>{
     if(!editor){ toast("Importar solo en modo editor.","error"); return; }
     $("#importFile").value = "";
     $("#importFile").click();
   };
+
   $("#importFile").addEventListener("change", async (e)=>{
     const file = e.target.files && e.target.files[0];
     if(!file) return;
@@ -834,24 +896,45 @@ function bindUI(){
       toast("Posiciones importadas");
     }catch(err){ console.error(err); toast("Error importando JSON","error"); }
   });
+
   $("#searchFlights").addEventListener("input",()=>renderFlightsList());
 
-  // position modal line sync
   function syncLine(){
     if(!temp.latlng || !temp.line) return;
     const hdg=normHdg($("#posHdg").value);
     temp.line.setLatLngs([temp.latlng, destPoint(temp.latlng.lat, temp.latlng.lng, hdg, 120)]);
   }
-  $("#posHdg").addEventListener("input",()=>{ const v=normHdg($("#posHdg").value); $("#posHdg").value=String(v); $("#posHdgSlider").value=String(v); syncLine(); });
-  $("#posHdgSlider").addEventListener("input",()=>{ const v=normHdg($("#posHdgSlider").value); $("#posHdg").value=String(v); syncLine(); });
-  $("#posHdgSlider").addEventListener("wheel",(e)=>{ e.preventDefault(); const cur=normHdg($("#posHdgSlider").value); const next=normHdg(cur+(e.deltaY>0?-1:1)); $("#posHdgSlider").value=String(next); $("#posHdg").value=String(next); syncLine(); },{passive:false});
+
+  $("#posHdg").addEventListener("input",()=>{
+    const v=normHdg($("#posHdg").value);
+    $("#posHdg").value=String(v);
+    $("#posHdgSlider").value=String(v);
+    syncLine();
+  });
+
+  $("#posHdgSlider").addEventListener("input",()=>{
+    const v=normHdg($("#posHdgSlider").value);
+    $("#posHdg").value=String(v);
+    syncLine();
+  });
+
+  $("#posHdgSlider").addEventListener("wheel",(e)=>{
+    e.preventDefault();
+    const cur=normHdg($("#posHdgSlider").value);
+    const next=normHdg(cur+(e.deltaY>0?-1:1));
+    $("#posHdgSlider").value=String(next);
+    $("#posHdg").value=String(next);
+    syncLine();
+  },{passive:false});
 
   $("#btnPosCancel").onclick=()=>{ clearTemp(); closeModal("modalPos"); };
+
   $("#btnPosSave").onclick=()=>{
     if(!temp.latlng){ toast("No hay punto seleccionado.","error"); return; }
     const name=($("#posName").value||"").trim();
     const hdg=normHdg($("#posHdg").value);
     if(!name){ toast("Ingresá el nombre/número.","error"); return; }
+
     const existing=positions.find(p=>String(p.name).toUpperCase()===String(name).toUpperCase());
     if(existing && (!temp.id || existing.id!==temp.id)){
       existing.lat=temp.latlng.lat; existing.lng=temp.latlng.lng; existing.hdg=hdg;
@@ -861,9 +944,13 @@ function bindUI(){
     }else{
       positions.push({id:crypto.randomUUID(),name,lat:temp.latlng.lat,lng:temp.latlng.lng,hdg});
     }
+
     saveJson(STORAGE.positions,positions);
     schedulePositionsSync();
-    clearTemp(); closeModal("modalPos"); renderPositions(); toast("Posición guardada");
+    clearTemp();
+    closeModal("modalPos");
+    renderPositions();
+    toast("Posición guardada");
   };
 
   $("#btnPlay").onclick=()=>togglePlay();

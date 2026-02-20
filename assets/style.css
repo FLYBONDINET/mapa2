@@ -1,4 +1,3 @@
-
 :root{
   --bg:#0b0f16;--panel:rgba(14,20,32,.92);--stroke:rgba(255,255,255,.10);--stroke2:rgba(255,255,255,.16);
   --text:rgba(240,246,255,.92);--muted:rgba(240,246,255,.60);--accent:#5dd6ff;--accent2:#7c5cff;
@@ -74,7 +73,6 @@ var(--bg);color:var(--text);overflow:hidden}
 .pos-icon span{font-weight:900;font-size:12px;letter-spacing:.2px;color:rgba(255,255,255,.95)}
 .pos-icon.highlight{border-color:rgba(93,214,255,.55);box-shadow:0 0 0 4px rgba(93,214,255,.18), 0 10px 28px rgba(0,0,0,.38)}
 
-
 /* Hide cards while moving map (requested) */
 .cards-overlay{ transition: opacity .12s ease; }
 .cards-overlay.moving{ opacity:0; pointer-events:none; }
@@ -123,11 +121,11 @@ select.input{ appearance:none; }
   color: rgba(255,255,255,.95);
 }
 
-/* Movimiento: línea intermitente animada */
-.move-line {
+/* ✅ Movimiento: línea intermitente animada (aplicada por className="move-line") */
+.move-line{
   stroke-dasharray: 8 10;
-  animation: dashmove 1.2s linear infinite;
   stroke-linecap: round;
+  animation: dashmove 1.2s linear infinite;
 }
 @keyframes dashmove {
   to { stroke-dashoffset: -18; }
