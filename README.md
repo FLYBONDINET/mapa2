@@ -21,3 +21,9 @@
 
 ## GitHub Pages
 - Abrir desde GitHub Pages funciona igual (la configuración y posiciones quedan locales por navegador/PC).
+
+## v6 (AUTO-SYNC)
+- Posiciones creadas se guardan automáticamente en Google Sheets (hoja **saez_positions**).
+- Registro persistente matrícula → última posición (hoja **aircraft_positions**).
+- Modo Intermedia / OCC PRO + Auto-refresh en ⚙︎.
+- Importar/Exportar posiciones (JSON) en modo editor.

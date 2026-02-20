@@ -49,6 +49,11 @@
           </div>
           <div class="panel-body">
             <div class="tiny muted">En editor: tocá el mapa para crear una posición.</div>
+            <div class="row gap" style="margin-top:10px">
+              <button id="btnExportPos" class="btn btn-ghost" title="Exportar posiciones (JSON)">⬇︎ Exportar</button>
+              <button id="btnImportPos" class="btn btn-ghost" title="Importar posiciones (JSON)">⬆︎ Importar</button>
+            </div>
+            <input id="importFile" type="file" accept="application/json" style="display:none" />
             <div id="positionsList" class="list"></div>
           </div>
         </section>
@@ -137,7 +142,19 @@
     </div>
     <div class="modal-body">
       <div class="muted small">Pegá la URL del Web App (Apps Script) que termina en <span class="kbd">/exec</span>.</div>
-      <label class="label">API URL</label>
+      <label class="label">Modo</label>
+<select id="modeSelect" class="input">
+  <option value="intermediate">Intermedia</option>
+  <option value="pro">OCC PRO</option>
+</select>
+<label class="label">Auto-refresh</label>
+<select id="autoRefreshSelect" class="input">
+  <option value="0">OFF</option>
+  <option value="30">30s</option>
+  <option value="60">60s</option>
+  <option value="120">120s</option>
+</select>
+<label class="label">API URL</label>
       <input id="apiUrlInput" class="input" placeholder="https://script.google.com/macros/s/.../exec" />
       <div class="row right gap">
         <button id="btnSettingsCancel" class="btn btn-ghost">Cancelar</button>

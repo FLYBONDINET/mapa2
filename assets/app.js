@@ -4,12 +4,14 @@
 const CENTER = [-34.8222, -58.5358];
 const ZOOM = 16;
 const EDIT_PASSWORD = "12345678";
-const DEFAULT_API_URL = "https://script.google.com/macros/s/AKfycbxPyGjGBzP99_Ti4uwu5CNg7XipTiImQdOzAfSOvziWCmVY0uUr7XD_EHSa18U8jsTGnQ/exec";
+const DEFAULT_API_URL = "https://script.google.com/macros/s/AKfycbw85YzeA5lEJhejumGlIA3aOswETE-GJoCjBklD7uDXLUWrtwrMvG8v_ldvXEjd1ukwig/exec";
 const STORAGE = {
   positions: "saez.positions.pro1",
   apiUrl: "saez.apiUrl.pro1",
   cardOffsets: "saez.cardOffsets.pro1",
-  cardExpanded: "saez.cardExpanded.pro1"
+  cardExpanded: "saez.cardExpanded.pro1",
+  mode: "saez.mode.pro1",
+  autoRefresh: "saez.autoRefresh.pro1"
 };
 
 const $ = (s)=>document.querySelector(s);
@@ -39,6 +41,22 @@ function loadJson(key, fallback){ try{ const v=localStorage.getItem(key); return
 function saveJson(key, val){ localStorage.setItem(key, JSON.stringify(val)); }
 function getApiUrl(){ return (localStorage.getItem(STORAGE.apiUrl)||"").trim(); }
 function setApiUrl(v){ localStorage.setItem(STORAGE.apiUrl, (v||"").trim()); }
+function getMode(){ return (localStorage.getItem(STORAGE.mode)||"intermediate").trim() || "intermediate"; }
+function setMode(v){ localStorage.setItem(STORAGE.mode, (v||"intermediate").trim()); }
+function getAutoRefresh(){ return Number(localStorage.getItem(STORAGE.autoRefresh) || 0) || 0; }
+function setAutoRefresh(v){ localStorage.setItem(STORAGE.autoRefresh, String(Number(v)||0)); }
+function b64UrlEncodeUnicode(str){
+  // UTF-8 -> base64url (sin + / =), ideal para querystring
+  const b64 = btoa(unescape(encodeURIComponent(str)));
+  return b64.replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+}
+function b64UrlDecodeUnicode(str){
+  // base64url -> UTF-8
+  let s = String(str||'').replace(/-/g,'+').replace(/_/g,'/');
+  while(s.length % 4) s += '=';
+  return decodeURIComponent(escape(atob(s)));
+}
+
 function normHdg(v){ let n=Number(v); if(!Number.isFinite(n)) n=0; n=Math.round(n%360); if(n<0)n+=360; return n; }
 
 function destPoint(lat,lng,bearingDeg,distM){
@@ -89,6 +107,8 @@ function flightKey(f){
 let map, editor=false;
 let positions=loadJson(STORAGE.positions, []);
 let flights=[], movements=[];
+let aircraftPositions=[]; // persisted registry -> last pos
+
 let posMarkers=new Map();
 let cards=new Map();
 let cardOffsets=loadJson(STORAGE.cardOffsets, {});
@@ -133,6 +153,8 @@ function init(){
   map.on("moveend zoomend", ()=> { $("#cardsOverlay").classList.remove("moving"); positionCards(); });
 
   bindUI();
+  applyModeUi();
+  setupAutoRefresh();
   setEditor(false);
   renderPositions();
   updateTimeLabel();
@@ -213,9 +235,44 @@ function renderPosList(){
     const bEd=document.createElement("button"); bEd.className="btn btn-ghost"; bEd.textContent="Editar";
     bEd.onclick=()=>openEditPos(p.id);
     const bDel=document.createElement("button"); bDel.className="btn btn-danger"; bDel.textContent="Eliminar";
-    bDel.onclick=()=>{ positions=positions.filter(x=>x.id!==p.id); saveJson(STORAGE.positions,positions); renderPositions(); toast(`Posición ${p.name} eliminada`); };
+    bDel.onclick=()=>{ positions=positions.filter(x=>x.id!==p.id); saveJson(STORAGE.positions,positions); schedulePositionsSync(); renderPositions(); toast(`Posición ${p.name} eliminada`); };
     acts.append(bGo,bEd,bDel);
     row.append(main,acts); wrap.appendChild(row);
+  }
+}
+
+let _posSyncTimer = null;
+let _posSyncPending = false;
+
+function schedulePositionsSync(){
+  _posSyncPending = true;
+  clearTimeout(_posSyncTimer);
+  _posSyncTimer = setTimeout(()=>{ pushPositionsToSheet(); }, 600);
+}
+
+async function pushPositionsToSheet(){
+  const api = getApiUrl();
+  if(!api) return;
+  if(!_posSyncPending) return;
+  _posSyncPending = false;
+
+  try{
+    const payload = b64UrlEncodeUnicode(JSON.stringify(positions));
+    const url = api + (api.includes("?") ? "&" : "?") + "action=savePositions&data=" + encodeURIComponent(payload) + "&cb=" + Date.now();
+
+    // Envío sin CORS: beacon con Image (ideal GitHub Pages)
+    const img = new Image();
+    img.onerror = ()=>{ 
+      _posSyncPending = true;
+      clearTimeout(_posSyncTimer);
+      _posSyncTimer = setTimeout(()=>pushPositionsToSheet(), 2500);
+    };
+    img.src = url;
+  }catch(err){
+    console.warn("pushPositionsToSheet failed, will retry", err);
+    _posSyncPending = true;
+    clearTimeout(_posSyncTimer);
+    _posSyncTimer = setTimeout(()=>{ pushPositionsToSheet(); }, 2500);
   }
 }
 
@@ -228,6 +285,13 @@ async function refresh(){
     const res=await fetch(url,{cache:"no-store"});
     if(!res.ok) throw new Error("HTTP "+res.status);
     const data=await res.json();
+
+    if(Array.isArray(data.positions)){
+      positions = data.positions;
+      saveJson(STORAGE.positions, positions);
+    }
+    aircraftPositions = Array.isArray(data.aircraftPositions) ? data.aircraftPositions : [];
+
     const snap=normalize(data);
     history.push(snap); if(history.length>80) history.shift();
     $("#timeSlider").max=String(Math.max(0,history.length-1));
@@ -269,9 +333,49 @@ function applySnapshot(snap){
   positionCards();
 }
 
+function renderAircraftRegistry(listEl){
+  const mode = getMode();
+  if(mode !== "pro") return;
+
+  const hdr = document.createElement("div");
+  hdr.className = "tiny muted";
+  hdr.style.marginTop = "4px";
+  hdr.textContent = "Registro aeronaves (última posición):";
+  listEl.appendChild(hdr);
+
+  const q = ($("#searchFlights").value || "").trim().toLowerCase();
+  const regs = (aircraftPositions||[]).filter(r=>{
+    const s = `${r.reg||""} ${r.pos||""}`.toLowerCase();
+    return !q || s.includes(q);
+  }).slice(0, 120);
+
+  for(const r of regs){
+    const row = document.createElement("div");
+    row.className = "item";
+    row.style.cursor = "pointer";
+    row.innerHTML = `<div class="item-main">
+      <div class="item-title">${escapeHtml(r.reg)} <span class="pill">${escapeHtml(r.pos||"-")}</span></div>
+      <div class="item-sub">Última act: ${escapeHtml(r.updatedAt||"-")} • Fuente: ${escapeHtml(r.source||"-")}</div>
+    </div>`;
+    row.onclick = ()=>{
+      const p = findPosByName(r.pos);
+      if(p) map.setView([p.lat,p.lng], Math.max(map.getZoom(), 17), {animate:true});
+    };
+    listEl.appendChild(row);
+  }
+
+  const sep = document.createElement("div");
+  sep.className = "tiny muted";
+  sep.style.margin = "10px 0 0";
+  sep.textContent = "Vuelos activos:";
+  listEl.appendChild(sep);
+}
+
 function renderFlightsList(){
   const q=($("#searchFlights").value||"").trim().toLowerCase();
   const list=$("#flightsList"); list.innerHTML="";
+  renderAircraftRegistry(list);
+
   const filtered=flights.filter(f=>{
     const s=`${f.reg} ${(f.arr?.flightNo||"")} ${(f.dep?.flightNo||"")}`.toLowerCase();
     return !q || s.includes(q);
@@ -322,12 +426,13 @@ function cardHtml(f){
       <div class="k">Vuelo</div><div class="v">${escapeHtml(f.arr.flightNo||"N/D")}</div>
       <div class="k">Origen</div><div class="v">${escapeHtml(f.arr.origin||"-")}</div>
       <div class="k">Hora</div><div class="v">${escapeHtml(f.arr.time||"-")}</div>
-      <div class="k">Remark</div><div class="v">${escapeHtml(f.arr.state||"-")}</div></div>`:"";
+      <div class="k">Estado</div><div class="v">${escapeHtml(f.arr.state||"-")}</div></div>`:"";
   const dep=f.dep?`<div class="badge dep">Salida</div><div class="kv">
       <div class="k">Vuelo</div><div class="v">${escapeHtml(f.dep.flightNo||"N/D")}</div>
       <div class="k">Hora</div><div class="v">${escapeHtml(f.dep.time||"-")}</div>
       <div class="k">Destino</div><div class="v">${escapeHtml(f.dep.dest||"-")}</div>
-      <div class="k">Remark</div><div class="v">${escapeHtml(f.dep.state||"-")}</div></div>`:"";
+      <div class="k">Puerta</div><div class="v">${escapeHtml(f.dep.gate||"-")}</div>
+      <div class="k">Estado</div><div class="v">${escapeHtml(f.dep.state||"-")}</div></div>`:"";
 
   return `<div class="title">
             <button class="title-btn" data-action="toggle" data-key="${escapeHtml(key)}" title="Cerrar detalles">
@@ -353,6 +458,8 @@ function enableDrag(div,key){
   };
 
   div.addEventListener("pointerdown",(e)=>{
+    // No iniciar drag si el click fue sobre el botón de matrícula (toggle)
+    if(e.target && e.target.closest && e.target.closest("[data-action=\'toggle\']")) return;
     dragging=true;
     div.setPointerCapture(e.pointerId);
     const rect=div.getBoundingClientRect();
@@ -491,6 +598,23 @@ function renderAircraft(){
   });
 }
 
+function applyModeUi(){
+  const mode = getMode();
+  const show = (mode === "pro");
+  $("#btnPlay").style.display = show ? "" : "none";
+  $("#timeSlider").style.display = show ? "" : "none";
+  $("#timeLabel").style.display = show ? "" : "none";
+}
+
+let autoRefreshTimer = null;
+function setupAutoRefresh(){
+  if(autoRefreshTimer){ clearInterval(autoRefreshTimer); autoRefreshTimer = null; }
+  const sec = getAutoRefresh();
+  if(sec > 0){
+    autoRefreshTimer = setInterval(()=> refresh(), sec*1000);
+  }
+}
+
 function updateTimeLabel(){
   const v=Number($("#timeSlider").value||0);
   const max=Number($("#timeSlider").max||0);
@@ -540,11 +664,46 @@ function bindUI(){
     closeModal("modalPass"); setEditor(true); toast("Editor habilitado: tocá el mapa.");
   };
 
-  $("#btnSettings").onclick=()=>{ $("#apiUrlInput").value=getApiUrl(); openModal("modalSettings"); };
+  $("#btnSettings").onclick=()=>{ $("#apiUrlInput").value=getApiUrl(); $("#modeSelect").value=getMode(); $("#autoRefreshSelect").value=String(getAutoRefresh()); openModal("modalSettings"); };
   $("#btnSettingsCancel").onclick=()=>closeModal("modalSettings");
-  $("#btnSettingsSave").onclick=()=>{ setApiUrl($("#apiUrlInput").value); closeModal("modalSettings"); toast("Configuración guardada"); };
+  $("#btnSettingsSave").onclick=()=>{ setApiUrl($("#apiUrlInput").value); setMode($("#modeSelect").value); setAutoRefresh($("#autoRefreshSelect").value); closeModal("modalSettings"); applyModeUi(); setupAutoRefresh(); toast("Configuración guardada"); };
 
   $("#btnRefresh").onclick=()=>refresh();
+
+  // Export/Import posiciones (solo editor)
+  $("#btnExportPos").onclick = ()=>{
+    if(!editor){ toast("Exportar solo en modo editor.","error"); return; }
+    const blob = new Blob([JSON.stringify(positions, null, 2)], {type:"application/json"});
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `saez_positions_${Date.now()}.json`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
+  $("#btnImportPos").onclick = ()=>{
+    if(!editor){ toast("Importar solo en modo editor.","error"); return; }
+    $("#importFile").value = "";
+    $("#importFile").click();
+  };
+  $("#importFile").addEventListener("change", async (e)=>{
+    const file = e.target.files && e.target.files[0];
+    if(!file) return;
+    try{
+      const txt = await file.text();
+      const arr = JSON.parse(txt);
+      if(!Array.isArray(arr)) throw new Error("JSON inválido");
+      for(const p of arr){
+        if(!p || !p.name || !Number.isFinite(p.lat) || !Number.isFinite(p.lng)) continue;
+        const existing = positions.find(x=>String(x.name).toUpperCase()===String(p.name).toUpperCase());
+        if(existing){ existing.lat=p.lat; existing.lng=p.lng; existing.hdg = normHdg(p.hdg||0); }
+        else{ positions.push({id: crypto.randomUUID(), name:String(p.name), lat:p.lat, lng:p.lng, hdg:normHdg(p.hdg||0)}); }
+      }
+      saveJson(STORAGE.positions, positions);
+      schedulePositionsSync();
+      renderPositions();
+      toast("Posiciones importadas");
+    }catch(err){ console.error(err); toast("Error importando JSON","error"); }
+  });
   $("#searchFlights").addEventListener("input",()=>renderFlightsList());
 
   // position modal line sync
@@ -573,6 +732,7 @@ function bindUI(){
       positions.push({id:crypto.randomUUID(),name,lat:temp.latlng.lat,lng:temp.latlng.lng,hdg});
     }
     saveJson(STORAGE.positions,positions);
+    schedulePositionsSync();
     clearTemp(); closeModal("modalPos"); renderPositions(); toast("Posición guardada");
   };
 

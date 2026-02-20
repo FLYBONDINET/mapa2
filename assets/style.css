@@ -103,3 +103,5 @@ var(--bg);color:var(--text);overflow:hidden}
   padding:0;
 }
 .title-btn:hover{ text-decoration: underline; }
+
+select.input{ appearance:none; }
