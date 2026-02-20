@@ -4,7 +4,7 @@
 const CENTER = [-34.8222, -58.5358];
 const ZOOM = 16;
 const EDIT_PASSWORD = "12345678";
-const DEFAULT_API_URL = "https://script.google.com/macros/s/AKfycbxPyGjGBzP99_Ti4uwu5CNg7XipTiImQdOzAfSOvziWCmVY0uUr7XD_EHSa18U8jsTGnQ/exec";
+const DEFAULT_API_URL = "https://script.google.com/macros/s/AKfycbwi9BKtVvzqbzZCpZUqTbPNVZ9z6S-M6xyAYdd8qq_WNR59TqPdilBqB4YX2GO2ENCP3w/exec";
 const STORAGE = {
   positions: "saez.positions.pro1",
   apiUrl: "saez.apiUrl.pro1",
@@ -320,42 +320,61 @@ function parseHHMM(s){
 function normalize(data){
   const arr = Array.isArray(data.arrivals) ? data.arrivals : [];
   const dep = Array.isArray(data.departures) ? data.departures : [];
+  const registry = Array.isArray(data.aircraftPositions) ? data.aircraftPositions : [];
+
+  // ✅ Matrículas que despegaron: NO se dibujan aunque estén en registry
+  const departed = new Set((data.departedRegs || []).map(x => String(x).toUpperCase()));
+
   const regMap = new Map();
 
-  const registry = Array.isArray(data.aircraftPositions) ? data.aircraftPositions : [];
+  // Base: registry persistente (solo los que tengan posición y NO estén despegados)
   for(const r of registry){
     if(!r || !r.reg) continue;
-    regMap.set(String(r.reg).toUpperCase(), {
-      reg: String(r.reg).toUpperCase(),
-      pos: (r.pos||"").trim(),
+    const key = String(r.reg).toUpperCase();
+    if(departed.has(key)) continue;
+    const pos = String(r.pos||"").trim();
+    if(!pos) continue;
+
+    regMap.set(key, {
+      reg: key,
+      pos,
       arr: null,
       dep: null,
-      registry: { pos:(r.pos||"").trim(), updatedAt:r.updatedAt||"", source:r.source||"" }
+      registry: { pos, updatedAt:r.updatedAt||"", source:r.source||"" }
     });
   }
 
+  // Arrivals: solo si tiene time (ETA/ATA)
   for(const a of arr){
     if(!a || !a.reg) continue;
     const key = String(a.reg).toUpperCase();
-    const time = a.time || "";
+    if(departed.has(key)) continue;
+
+    const time = (a.time||"").trim();
     if(!time || time === "-") continue;
-    const obj = regMap.get(key) || { reg:key, pos:(a.pos||"").trim(), arr:null, dep:null, registry:null };
-    if((a.pos||"").trim()) obj.pos = (a.pos||"").trim();
+
+    const obj = regMap.get(key) || { reg:key, pos:String(a.pos||"").trim(), arr:null, dep:null, registry:null };
+    if(String(a.pos||"").trim()) obj.pos = String(a.pos||"").trim();
+
     obj.arr = {
       flightNo: a.flightNo||"",
       origin: a.origin||"",
-      time: time,
+      time,
       belt: a.belt||"",
       state: a.state||""
     };
     regMap.set(key, obj);
   }
 
+  // Departures: solo los activos (ya vienen filtrados por backend)
   for(const d of dep){
     if(!d || !d.reg) continue;
     const key = String(d.reg).toUpperCase();
-    const obj = regMap.get(key) || { reg:key, pos:(d.pos||"").trim(), arr:null, dep:null, registry:null };
-    if((d.pos||"").trim()) obj.pos = (d.pos||"").trim();
+    if(departed.has(key)) continue;
+
+    const obj = regMap.get(key) || { reg:key, pos:String(d.pos||"").trim(), arr:null, dep:null, registry:null };
+    if(String(d.pos||"").trim()) obj.pos = String(d.pos||"").trim();
+
     obj.dep = {
       flightNo: d.flightNo||"",
       dest: d.dest||"",
@@ -366,30 +385,19 @@ function normalize(data){
     regMap.set(key, obj);
   }
 
-  for(const [k,obj] of regMap){
-    if(obj.arr && obj.dep){
-      const ta = parseHHMM(obj.arr.time);
-      const td = parseHHMM(obj.dep.time);
-      if(ta!==null && td!==null && td <= ta){
-        obj.dep = null;
-      }
-    }
-  }
-
+  // Solo aeronaves con posición válida
   const out = [];
   for(const obj of regMap.values()){
-    const pos = (obj.pos||"").trim();
-    if(!pos || pos === "-") continue;
+    const pos = String(obj.pos||"").trim();
+    if(!pos) continue;
     out.push(obj);
   }
 
+  // Orden: TA, ARR, DEP
   out.sort((a,b)=>{
     const rank = (o)=> (o.arr && o.dep)?0:(o.arr?1:(o.dep?2:3));
     const ra=rank(a), rb=rank(b);
     if(ra!==rb) return ra-rb;
-    const ta=parseHHMM(a.arr?.time||a.dep?.time||"") ?? 9999;
-    const tb=parseHHMM(b.arr?.time||b.dep?.time||"") ?? 9999;
-    if(ta!==tb) return ta-tb;
     return String(a.reg).localeCompare(String(b.reg));
   });
 
