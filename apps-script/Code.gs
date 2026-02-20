@@ -1,12 +1,12 @@
 /**
- * SAEZ-ATCCTRL — Apps Script JSON API (v6)
- * - Crea y mantiene:
+ * SAEZ-ATCCTRL — Apps Script JSON API (v10 STABLE)
+ * - Mantiene:
  *   - saez_positions: posiciones creadas (ID, Nombre, Lat, Lng, HDG)
- *   - aircraft_positions: matrícula -> última posición (persistente)
+ *   - aircraft_positions: matrícula -> última posición (persistente, UPSERT)
  *
- * GET /exec
- * GET /exec?action=exportPositions
- * GET /exec?action=savePositions&data=<base64(JSON positions)>   (sin preflight CORS)
+ * GET  /exec                         => data (default)
+ * GET  /exec?action=exportPositions   => {positions:[...]}
+ * GET  /exec?action=savePositions&data=<base64url(JSON positions)>
  */
 
 const SPREADSHEET_ID = "1PKBvMRZWZg-64OgQIvaqZHZO-b2wOQ50bG6yudOF3_Y";
@@ -16,19 +16,24 @@ const SHEET_POS = "saez_positions";
 const SHEET_ACREG = "aircraft_positions";
 
 function doGet(e){
-  const action = (e && e.parameter && e.parameter.action) ? String(e.parameter.action) : "data";
   ensureSheets_();
+
+  const action = (e && e.parameter && e.parameter.action)
+    ? String(e.parameter.action)
+    : "data";
 
   if(action === "exportPositions"){
     return json_({ positions: readPositions_() });
   }
 
   if(action === "savePositions"){
-    // data llega como base64url (sin + / =). Apps Script: base64DecodeWebSafe.
-    let data = (e && e.parameter && e.parameter.data) ? String(e.parameter.data) : "";
     try{
+      let data = (e && e.parameter && e.parameter.data) ? String(e.parameter.data) : "";
       data = data.replace(/\s/g,'');
-      const jsonStr = Utilities.newBlob(Utilities.base64DecodeWebSafe(data)).getDataAsString("UTF-8");
+      const jsonStr = Utilities.newBlob(
+        Utilities.base64DecodeWebSafe(data)
+      ).getDataAsString("UTF-8");
+
       const arr = JSON.parse(jsonStr);
       writePositions_(Array.isArray(arr) ? arr : []);
       return json_({ ok:true });
@@ -37,12 +42,11 @@ function doGet(e){
     }
   }
 
-  }
-
   const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
   const arrivals = readArrivals_(ss.getSheetByName(SHEET_ARR));
   const departures = readDepartures_(ss.getSheetByName(SHEET_DEP));
 
+  // Persistencia: NO borrar los antiguos, solo actualizar/insertar los que aparecen
   upsertAircraftRegistry_(arrivals, departures);
 
   return json_({
@@ -85,23 +89,27 @@ function readArrivals_(sh){
   for(const r of values){
     const cia = normStr_(r[0]);
     const num = normStr_(r[1]);
-    const hora = normTime_(r[2]);
     const reg = normStr_(r[3]);
     const pos = normStr_(r[4]);
-    const eta = normTime_(r[5]);
-    const ata = normTime_(r[6]);
-    const belt = normStr_(r[7]);
-    const origin = normStr_(r[8]);
-    const remark = normStr_(r[9]);
+    const eta = normTime_(r[5]); // F
+    const ata = normTime_(r[6]); // G
+    const belt = normStr_(r[7]); // H
+    const origin = normStr_(r[8]); // I
+    const remark = normStr_(r[9]); // J
     if(!reg) continue;
+
+    // Solo si hay ETA (F) o ATA (G)
+    if((!eta || eta === "-") && (!ata || ata === "-")) continue;
+
     const flightNo = (cia && num) ? (cia + num) : (num || "");
-    const time = (ata && ata!=="-") ? ata : ((eta && eta!=="-") ? eta : ((hora && hora!=="-") ? hora : ""));
-    out.push({ reg, flightNo, pos, time, origin, state: remark, belt });
+    const time = (ata && ata !== "-") ? ata : eta; // si aterrizó, usar ATA
+
+    out.push({ reg, flightNo, pos, time, origin, belt, state: remark });
   }
   return out;
 }
 
-// Salidas: A Cía, B Nro, C Hora, D Matricula, E Pos, F ETD, G ATD, H Puerta, I Destino, J Remark
+// Salidas: A Cía, B Nro, C Hora, D Matricula, E Pos, F ETD, G ATD, H Puerta, I Destino, J EstadoEmbarque
 function readDepartures_(sh){
   if(!sh) return [];
   const last = sh.getLastRow();
@@ -111,20 +119,23 @@ function readDepartures_(sh){
   for(const r of values){
     const cia = normStr_(r[0]);
     const num = normStr_(r[1]);
-    const hora = normTime_(r[2]);
+    const sched = normTime_(r[2]); // C
     const reg = normStr_(r[3]);
     const pos = normStr_(r[4]);
-    const etd = normTime_(r[5]);
-    const atd = normTime_(r[6]);
-    const gate = normStr_(r[7]);
-    const dest = normStr_(r[8]);
-    const remark = normStr_(r[9]);
+    const etd = normTime_(r[5]);   // F (si existe, reemplaza C)
+    const atd = normTime_(r[6]);   // G (si hay hora => despegó)
+    const gate = normStr_(r[7]);   // H
+    const dest = normStr_(r[8]);   // I
+    const embark = normStr_(r[9]); // J (PRE/BOR/ULT/CER)
     if(!reg) continue;
-    const rr = (remark||"").toUpperCase();
-    if(rr.includes("CON") || rr.includes("CAN") || rr.includes("ALT")) continue;
+
+    // Si ATD tiene hora, NO mostrar (ya despegó)
+    if(atd && atd !== "-") continue;
+
     const flightNo = (cia && num) ? (cia + num) : (cia ? cia+num : (num||""));
-    const time = (atd && atd!=="-") ? atd : ((etd && etd!=="-") ? etd : ((hora && hora!=="-") ? hora : ""));
-    out.push({ reg, flightNo, pos, time, takeoff: (atd && atd!=="-")?atd:"", gate, dest, state: remark });
+    const time = ((etd && etd !== "-") ? etd : sched);
+
+    out.push({ reg, flightNo, pos, time, gate, dest, state: embark });
   }
   return out;
 }
@@ -152,10 +163,12 @@ function writePositions_(arr){
   const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
   const sh = ss.getSheetByName(SHEET_POS);
 
+  // merge por nombre (no duplicar)
   const existing = readPositions_();
-  const mapByName = {};
-  for(const p of existing) mapByName[String(p.name).toUpperCase()] = p;
-
+  const byName = {};
+  for(const p of existing){
+    byName[String(p.name).toUpperCase()] = p;
+  }
   for(const p of arr){
     if(!p) continue;
     const name = normStr_(p.name);
@@ -163,13 +176,12 @@ function writePositions_(arr){
     const lng = Number(p.lng);
     const hdg = Number(p.hdg);
     if(!name || !isFinite(lat) || !isFinite(lng)) continue;
-
-    const key = String(name).toUpperCase();
-    const id = normStr_(p.id) || (mapByName[key] ? mapByName[key].id : Utilities.getUuid());
-    mapByName[key] = { id, name, lat, lng, hdg: isFinite(hdg)?(Math.round(hdg)%360):0 };
+    const key = name.toUpperCase();
+    const id = normStr_(p.id) || (byName[key] ? byName[key].id : Utilities.getUuid());
+    byName[key] = { id, name, lat, lng, hdg: isFinite(hdg)?(Math.round(hdg)%360):0 };
   }
 
-  const rows = Object.values(mapByName)
+  const rows = Object.values(byName)
     .sort((a,b)=> String(a.name).localeCompare(String(b.name), undefined, {numeric:true}))
     .map(p=>[p.id,p.name,p.lat,p.lng,p.hdg]);
 
@@ -200,15 +212,15 @@ function upsertAircraftRegistry_(arrivals, departures){
   const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
   const sh = ss.getSheetByName(SHEET_ACREG);
 
+  const now = new Date().toISOString();
   const last = sh.getLastRow();
   const existing = (last >= 2) ? sh.getRange(2,1,last-1,5).getValues() : [];
-  const map = {};
-  for(let i=0;i<existing.length;i++){
-    const reg = normStr_(existing[i][0]);
-    if(reg) map[reg.toUpperCase()] = i;
-  }
 
-  const now = new Date().toISOString();
+  const idx = {};
+  for(let i=0;i<existing.length;i++){
+    const reg = normStr_(existing[i][0]).toUpperCase();
+    if(reg) idx[reg]=i;
+  }
 
   function normalizePos(posStr){
     const s = normStr_(posStr);
@@ -217,21 +229,25 @@ function upsertAircraftRegistry_(arrivals, departures){
   }
 
   function upsert(reg, pos, source){
-    if(!reg) return;
+    const r = normStr_(reg).toUpperCase();
+    if(!r) return;
     const p = normalizePos(pos);
-    if(!p) return;
-    const key = reg.toUpperCase();
-    const row = [reg, p, now, source, ""];
-    if(Object.prototype.hasOwnProperty.call(map,key)){
-      existing[map[key]] = row;
-    } else {
-      map[key] = existing.length;
+    if(!p || p === "-") return;
+    const row = [r, p, now, source, ""];
+    if(Object.prototype.hasOwnProperty.call(idx, r)){
+      existing[idx[r]] = row;
+    }else{
+      idx[r] = existing.length;
       existing.push(row);
     }
   }
 
-  for(const a of arrivals||[]) if(a && a.reg && a.pos) upsert(a.reg, a.pos, "ARR");
-  for(const d of departures||[]) if(d && d.reg && d.pos) upsert(d.reg, d.pos, "DEP");
+  for(const a of arrivals||[]){
+    if(a && a.reg && a.pos) upsert(a.reg, a.pos, "ARR");
+  }
+  for(const d of departures||[]){
+    if(d && d.reg && d.pos) upsert(d.reg, d.pos, "DEP");
+  }
 
   sh.clearContents();
   sh.getRange(1,1,1,5).setValues([["Matricula","Posicion","UpdatedAt","Fuente","Note"]]);

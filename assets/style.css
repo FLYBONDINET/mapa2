@@ -105,3 +105,30 @@ var(--bg);color:var(--text);overflow:hidden}
 .title-btn:hover{ text-decoration: underline; }
 
 select.input{ appearance:none; }
+
+.pill-btn{
+  border:1px solid rgba(255,255,255,.10);
+  background: rgba(255,255,255,.04);
+  color: rgba(255,255,255,.86);
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-weight: 800;
+  cursor:pointer;
+  font-size: 12px;
+}
+.pill-btn:hover{ background: rgba(255,255,255,.08); }
+.pill-btn.active{
+  background: rgba(74, 180, 255, .18);
+  border-color: rgba(74, 180, 255, .35);
+  color: rgba(255,255,255,.95);
+}
+
+/* Movimiento: línea intermitente animada */
+.move-line {
+  stroke-dasharray: 8 10;
+  animation: dashmove 1.2s linear infinite;
+  stroke-linecap: round;
+}
+@keyframes dashmove {
+  to { stroke-dashoffset: -18; }
+}

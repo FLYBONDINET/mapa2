@@ -4,7 +4,7 @@
 const CENTER = [-34.8222, -58.5358];
 const ZOOM = 16;
 const EDIT_PASSWORD = "12345678";
-const DEFAULT_API_URL = "https://script.google.com/macros/s/AKfycbw85YzeA5lEJhejumGlIA3aOswETE-GJoCjBklD7uDXLUWrtwrMvG8v_ldvXEjd1ukwig/exec";
+const DEFAULT_API_URL = "https://script.google.com/macros/s/AKfycbwpS8BUus5Mu8AYRg-NPeBzU9QXaLYLc4sCi6S6IhnDk_Asf3rZDpOixXje4QJxQ8GM3g/exec";
 const STORAGE = {
   positions: "saez.positions.pro1",
   apiUrl: "saez.apiUrl.pro1",
@@ -108,6 +108,7 @@ let map, editor=false;
 let positions=loadJson(STORAGE.positions, []);
 let flights=[], movements=[];
 let aircraftPositions=[]; // persisted registry -> last pos
+let flightTypeFilter="all";
 
 let posMarkers=new Map();
 let cards=new Map();
@@ -307,20 +308,93 @@ async function refresh(){
   }
 }
 
+function parseHHMM(s){
+  if(!s) return null;
+  const m = String(s).trim().match(/^(\d{1,2}):(\d{2})$/);
+  if(!m) return null;
+  const hh = Number(m[1]); const mm = Number(m[2]);
+  if(!Number.isFinite(hh)||!Number.isFinite(mm)) return null;
+  return hh*60+mm;
+}
+
 function normalize(data){
-  const arrBy=new Map(); (data.arrivals||[]).forEach(a=>{ if(a?.reg) arrBy.set(a.reg,a); });
-  const depBy=new Map(); (data.departures||[]).forEach(d=>{ if(d?.reg) depBy.set(d.reg,d); });
-  const regs=new Set([...arrBy.keys(),...depBy.keys()]);
-  const merged=[];
-  regs.forEach(reg=>{
-    const arr=arrBy.get(reg)||null;
-    const dep=depBy.get(reg)||null;
-    const pos=String(arr?.pos||dep?.pos||"").trim();
-    merged.push({reg,pos,arr,dep});
+  const arr = Array.isArray(data.arrivals) ? data.arrivals : [];
+  const dep = Array.isArray(data.departures) ? data.departures : [];
+  const regMap = new Map();
+
+  const registry = Array.isArray(data.aircraftPositions) ? data.aircraftPositions : [];
+  for(const r of registry){
+    if(!r || !r.reg) continue;
+    regMap.set(String(r.reg).toUpperCase(), {
+      reg: String(r.reg).toUpperCase(),
+      pos: (r.pos||"").trim(),
+      arr: null,
+      dep: null,
+      registry: { pos:(r.pos||"").trim(), updatedAt:r.updatedAt||"", source:r.source||"" }
+    });
+  }
+
+  for(const a of arr){
+    if(!a || !a.reg) continue;
+    const key = String(a.reg).toUpperCase();
+    const time = a.time || "";
+    if(!time || time === "-") continue;
+    const obj = regMap.get(key) || { reg:key, pos:(a.pos||"").trim(), arr:null, dep:null, registry:null };
+    if((a.pos||"").trim()) obj.pos = (a.pos||"").trim();
+    obj.arr = {
+      flightNo: a.flightNo||"",
+      origin: a.origin||"",
+      time: time,
+      belt: a.belt||"",
+      state: a.state||""
+    };
+    regMap.set(key, obj);
+  }
+
+  for(const d of dep){
+    if(!d || !d.reg) continue;
+    const key = String(d.reg).toUpperCase();
+    const obj = regMap.get(key) || { reg:key, pos:(d.pos||"").trim(), arr:null, dep:null, registry:null };
+    if((d.pos||"").trim()) obj.pos = (d.pos||"").trim();
+    obj.dep = {
+      flightNo: d.flightNo||"",
+      dest: d.dest||"",
+      time: d.time||"",
+      gate: d.gate||"",
+      state: d.state||""
+    };
+    regMap.set(key, obj);
+  }
+
+  for(const [k,obj] of regMap){
+    if(obj.arr && obj.dep){
+      const ta = parseHHMM(obj.arr.time);
+      const td = parseHHMM(obj.dep.time);
+      if(ta!==null && td!==null && td <= ta){
+        obj.dep = null;
+      }
+    }
+  }
+
+  const out = [];
+  for(const obj of regMap.values()){
+    const pos = (obj.pos||"").trim();
+    if(!pos || pos === "-") continue;
+    out.push(obj);
+  }
+
+  out.sort((a,b)=>{
+    const rank = (o)=> (o.arr && o.dep)?0:(o.arr?1:(o.dep?2:3));
+    const ra=rank(a), rb=rank(b);
+    if(ra!==rb) return ra-rb;
+    const ta=parseHHMM(a.arr?.time||a.dep?.time||"") ?? 9999;
+    const tb=parseHHMM(b.arr?.time||b.dep?.time||"") ?? 9999;
+    if(ta!==tb) return ta-tb;
+    return String(a.reg).localeCompare(String(b.reg));
   });
-  const movs=[];
-  merged.forEach(f=>{ const m=parseMovement(f.pos); if(m) movs.push({reg:f.reg,fromPos:m.from,toPos:m.to}); });
-  return { updatedAt:data.updatedAt||new Date().toISOString(), flights:merged, movements:movs };
+
+  const mov = Array.isArray(data.movements) ? data.movements : [];
+  return { flights: out, movements: mov };
 }
 
 function applySnapshot(snap){
@@ -426,13 +500,14 @@ function cardHtml(f){
       <div class="k">Vuelo</div><div class="v">${escapeHtml(f.arr.flightNo||"N/D")}</div>
       <div class="k">Origen</div><div class="v">${escapeHtml(f.arr.origin||"-")}</div>
       <div class="k">Hora</div><div class="v">${escapeHtml(f.arr.time||"-")}</div>
+      <div class="k">Cinta</div><div class="v">${escapeHtml(f.arr.belt||"-")}</div>
       <div class="k">Estado</div><div class="v">${escapeHtml(f.arr.state||"-")}</div></div>`:"";
   const dep=f.dep?`<div class="badge dep">Salida</div><div class="kv">
       <div class="k">Vuelo</div><div class="v">${escapeHtml(f.dep.flightNo||"N/D")}</div>
       <div class="k">Hora</div><div class="v">${escapeHtml(f.dep.time||"-")}</div>
       <div class="k">Destino</div><div class="v">${escapeHtml(f.dep.dest||"-")}</div>
       <div class="k">Puerta</div><div class="v">${escapeHtml(f.dep.gate||"-")}</div>
-      <div class="k">Estado</div><div class="v">${escapeHtml(f.dep.state||"-")}</div></div>`:"";
+      <div class="k">Embarque</div><div class="v">${escapeHtml(f.dep.state||"-")}</div></div>`:"";
 
   return `<div class="title">
             <button class="title-btn" data-action="toggle" data-key="${escapeHtml(key)}" title="Cerrar detalles">
